@@ -25,6 +25,7 @@ run() {
 run_sh() {
   if $DRY_RUN; then
     echo "  [dry-run] $1"
+    return 1
   else
     eval "$1"
   fi
@@ -163,8 +164,11 @@ if [[ -x "$SDKMANAGER" ]]; then
   done
   if (( ${#TO_UNINSTALL[@]} > 0 )); then
     info "Desinstalando ${#TO_UNINSTALL[@]} build-tools antiguas..."
-    run_sh "$SDKMANAGER --uninstall ${(q)TO_UNINSTALL[@]} 2>&1 | tail -2"
-    ok "build-tools antiguas desinstaladas"
+    if $DRY_RUN; then
+      echo "  [dry-run] $SDKMANAGER --uninstall ${TO_UNINSTALL[*]}"
+    else
+      "$SDKMANAGER" --uninstall "${TO_UNINSTALL[@]}" 2>&1 | tail -2 && ok "build-tools antiguas desinstaladas"
+    fi
   else
     info "No hay build-tools antiguas instaladas — omitido"
   fi
@@ -189,8 +193,11 @@ if [[ -x "$SDKMANAGER" ]]; then
   done
   if (( ${#TO_UNINSTALL[@]} > 0 )); then
     info "Desinstalando ${#TO_UNINSTALL[@]} cmdline-tools viejas..."
-    run_sh "$SDKMANAGER --uninstall ${(q)TO_UNINSTALL[@]} 2>&1 | tail -2"
-    ok "cmdline-tools viejas desinstaladas"
+    if $DRY_RUN; then
+      echo "  [dry-run] $SDKMANAGER --uninstall ${TO_UNINSTALL[*]}"
+    else
+      "$SDKMANAGER" --uninstall "${TO_UNINSTALL[@]}" 2>&1 | tail -2 && ok "cmdline-tools viejas desinstaladas"
+    fi
   else
     info "No hay cmdline-tools viejas instaladas — omitido"
   fi
@@ -291,8 +298,7 @@ if [[ -d "$DIAG_DIR" ]]; then
   COUNT=$(find "$DIAG_DIR" \( -name "*.crash" -o -name "*.ips" \) -mtime +30 2>/dev/null | wc -l | tr -d ' ')
   if (( COUNT > 0 )); then
     info "Borrando $COUNT crash reports con +30 días"
-    run_sh "find \"$DIAG_DIR\" \\( -name '*.crash' -o -name '*.ips' \\) -mtime +30 -delete 2>/dev/null"
-    ok "Crash reports viejos borrados"
+    run_sh "find \"$DIAG_DIR\" \\( -name '*.crash' -o -name '*.ips' \\) -mtime +30 -delete 2>/dev/null" && ok "Crash reports viejos borrados"
   else
     info "No hay crash reports con +30 días — omitido"
   fi
