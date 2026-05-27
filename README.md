@@ -2,15 +2,24 @@
 
 Script for cleaning up development environments (iOS + Android) with Node.js, Xcode and Android Studio.
 
-## Usage
+## Install & run
 
+**One-liner** (download, inspect, execute):
 ```bash
-# Preview what would be deleted without removing anything
-./clean.sh --dry-run
+curl -fsSL https://raw.githubusercontent.com/milyzc/clean-mac/main/clean.sh -o clean.sh && chmod +x clean.sh
+```
 
-# Run the actual cleanup
+**Dry-run first** (recommended — shows what would be deleted without touching anything):
+```bash
+./clean.sh --dry-run
+```
+
+**Run the actual cleanup:**
+```bash
 ./clean.sh
 ```
+
+> Always run `--dry-run` before the real thing so you know exactly what will be removed.
 
 ## What it cleans
 
