@@ -200,7 +200,7 @@ fi
 section "10. SISTEMA — logs y caché de macOS"
 # ─────────────────────────────────────────────────────────────────────────────
 info "Vaciando Trash"
-run rm -rf ~/.Trash/* 2>/dev/null && ok "Trash vaciado"
+run rm -rf ~/.Trash/*(N) 2>/dev/null && ok "Trash vaciado"
 
 info "Limpiando VS Code cache"
 run rm -rf ~/Library/Application\ Support/Code/Cache 2>/dev/null
