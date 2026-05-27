@@ -15,8 +15,18 @@ RED='\033[0;31m'; YELLOW='\033[1;33m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; NC
 run() {
   if $DRY_RUN; then
     echo "  [dry-run] $*"
+    return 1
   else
-    eval "$*"
+    "$@"
+  fi
+}
+
+# Para comandos con pipes o redirecciones que no pueden pasarse como array
+run_sh() {
+  if $DRY_RUN; then
+    echo "  [dry-run] $1"
+  else
+    eval "$1"
   fi
 }
 
@@ -47,16 +57,16 @@ du -sh ~/Library/Caches/org.swift.swiftpm 2>/dev/null | awk '{print "  Swift PM 
 section "1. NPM — limpiar caché"
 # ─────────────────────────────────────────────────────────────────────────────
 info "npm cache clean --force"
-run "npm cache clean --force 2>/dev/null" && ok "npm cache limpiado"
+run npm cache clean --force 2>/dev/null && ok "npm cache limpiado"
 
 # ─────────────────────────────────────────────────────────────────────────────
 section "2. BREW — limpiar versiones viejas y dependencias huérfanas"
 # ─────────────────────────────────────────────────────────────────────────────
 if command -v brew &>/dev/null; then
   info "brew cleanup --prune=all"
-  run "brew cleanup --prune=all 2>/dev/null" && ok "brew cleanup listo"
+  run brew cleanup --prune=all 2>/dev/null && ok "brew cleanup listo"
   info "brew autoremove"
-  run "brew autoremove 2>/dev/null" && ok "brew autoremove listo"
+  run brew autoremove 2>/dev/null && ok "brew autoremove listo"
 else
   info "brew no instalado — omitido"
 fi
@@ -66,7 +76,7 @@ section "3. GRADLE — limpiar caché de Android builds"
 # ─────────────────────────────────────────────────────────────────────────────
 if [[ -d ~/.gradle/caches ]]; then
   info "Borrando ~/.gradle/caches"
-  run "rm -rf ~/.gradle/caches" && ok "Gradle cache borrado"
+  run rm -rf ~/.gradle/caches && ok "Gradle cache borrado"
 else
   info "~/.gradle/caches no encontrado — omitido"
 fi
@@ -76,7 +86,7 @@ section "4. COCOAPODS — limpiar caché"
 # ─────────────────────────────────────────────────────────────────────────────
 if command -v pod &>/dev/null; then
   info "pod cache clean --all"
-  run "pod cache clean --all 2>/dev/null" && ok "CocoaPods cache limpiado"
+  run pod cache clean --all 2>/dev/null && ok "CocoaPods cache limpiado"
 else
   info "pod no instalado — omitido"
 fi
@@ -87,7 +97,7 @@ section "5. XCODE — DerivedData"
 if [[ -d ~/Library/Developer/Xcode/DerivedData ]]; then
   SIZE=$(du -sh ~/Library/Developer/Xcode/DerivedData 2>/dev/null | awk '{print $1}')
   info "Borrando DerivedData ($SIZE)"
-  run "rm -rf ~/Library/Developer/Xcode/DerivedData" && ok "DerivedData borrado"
+  run rm -rf ~/Library/Developer/Xcode/DerivedData && ok "DerivedData borrado"
 else
   info "DerivedData vacío — omitido"
 fi
@@ -96,7 +106,7 @@ fi
 section "6. XCODE — Simuladores no usados"
 # ─────────────────────────────────────────────────────────────────────────────
 info "Borrando simuladores marcados como 'unavailable'"
-run "xcrun simctl delete unavailable 2>/dev/null" && ok "Simuladores unavailable borrados"
+run xcrun simctl delete unavailable 2>/dev/null && ok "Simuladores unavailable borrados"
 
 # ─────────────────────────────────────────────────────────────────────────────
 section "7. XCODE — iOS DeviceSupport (versiones viejas)"
@@ -104,15 +114,18 @@ section "7. XCODE — iOS DeviceSupport (versiones viejas)"
 # Conserva solo las 2 versiones más recientes
 DS_DIR=~/Library/Developer/Xcode/iOS\ DeviceSupport
 if [[ -d "$DS_DIR" ]]; then
-  # Lista carpetas ordenadas por fecha, borra todas excepto las 2 últimas
-  VERSIONS=($(ls -t "$DS_DIR" 2>/dev/null))
+  # Split solo en newlines para manejar nombres con espacios como "16.0 (20A362)"
+  # Ordena por nombre de versión (sort -V) en lugar de mtime para evitar que
+  # conectar un dispositivo viejo altere el orden; luego invierte (más reciente primero)
+  VERSIONS=(${(f)"$(ls "$DS_DIR" 2>/dev/null | sort -Vr)"})
   COUNT=${#VERSIONS[@]}
   KEEP=2
   if (( COUNT > KEEP )); then
     info "Conservando las $KEEP versiones más recientes, borrando $((COUNT - KEEP)) viejas"
-    for (( i=KEEP; i<COUNT; i++ )); do
+    # En zsh los arrays son 1-indexed: keep [1..KEEP], borrar [KEEP+1..COUNT]
+    for (( i=KEEP+1; i<=COUNT; i++ )); do
       info "  Borrando: ${VERSIONS[$i]}"
-      run "rm -rf \"$DS_DIR/${VERSIONS[$i]}\""
+      run rm -rf "$DS_DIR/${VERSIONS[$i]}"
     done
     ok "iOS DeviceSupport limpiado"
   else
@@ -150,7 +163,7 @@ if [[ -x "$SDKMANAGER" ]]; then
   done
   if (( ${#TO_UNINSTALL[@]} > 0 )); then
     info "Desinstalando ${#TO_UNINSTALL[@]} build-tools antiguas..."
-    run "$SDKMANAGER --uninstall ${(q)TO_UNINSTALL[@]} 2>&1 | tail -2"
+    run_sh "$SDKMANAGER --uninstall ${(q)TO_UNINSTALL[@]} 2>&1 | tail -2"
     ok "build-tools antiguas desinstaladas"
   else
     info "No hay build-tools antiguas instaladas — omitido"
@@ -168,13 +181,15 @@ if [[ -x "$SDKMANAGER" ]]; then
     "cmdline-tools;5.0" "cmdline-tools;6.0" "cmdline-tools;7.0" "cmdline-tools;8.0"
     "cmdline-tools;9.0" "cmdline-tools;10.0" "cmdline-tools;11.0"
   )
+  # Re-query para no depender de $INSTALLED de la sección 8
+  INSTALLED_CT=$($SDKMANAGER --list_installed 2>/dev/null | awk '{print $1}')
   TO_UNINSTALL=()
   for pkg in "${OLD_CMDTOOLS[@]}"; do
-    echo "$INSTALLED" | grep -qF "$pkg" && TO_UNINSTALL+=("$pkg")
+    echo "$INSTALLED_CT" | grep -qF "$pkg" && TO_UNINSTALL+=("$pkg")
   done
   if (( ${#TO_UNINSTALL[@]} > 0 )); then
     info "Desinstalando ${#TO_UNINSTALL[@]} cmdline-tools viejas..."
-    run "$SDKMANAGER --uninstall ${(q)TO_UNINSTALL[@]} 2>&1 | tail -2"
+    run_sh "$SDKMANAGER --uninstall ${(q)TO_UNINSTALL[@]} 2>&1 | tail -2"
     ok "cmdline-tools viejas desinstaladas"
   else
     info "No hay cmdline-tools viejas instaladas — omitido"
@@ -185,28 +200,29 @@ fi
 section "10. SISTEMA — logs y caché de macOS"
 # ─────────────────────────────────────────────────────────────────────────────
 info "Vaciando Trash"
-run "rm -rf ~/.Trash/* 2>/dev/null" && ok "Trash vaciado"
+run rm -rf ~/.Trash/* 2>/dev/null && ok "Trash vaciado"
 
 info "Limpiando VS Code cache"
-run "rm -rf ~/Library/Application\ Support/Code/Cache 2>/dev/null"
-run "rm -rf ~/Library/Application\ Support/Code/CachedExtensionVSIXs 2>/dev/null"
-ok "VS Code cache limpiado"
+run rm -rf ~/Library/Application\ Support/Code/Cache 2>/dev/null
+run rm -rf ~/Library/Application\ Support/Code/CachedExtensionVSIXs 2>/dev/null && ok "VS Code cache limpiado"
 
 # ─────────────────────────────────────────────────────────────────────────────
 section "11. NODE_MODULES — carpetas sin usar hace +60 días"
 # ─────────────────────────────────────────────────────────────────────────────
-NM_DIRS=($(find ~ -maxdepth 8 -name "node_modules" -type d -prune -mtime +60 \
-  -not -path "*/Library/*" -not -path "*/\.*" 2>/dev/null))
+# -atime: días desde último acceso (lectura), no desde última modificación de entradas.
+# Así un proyecto en uso diario con deps estables no es eliminado.
+NM_DIRS=(${(f)"$(find ~ -maxdepth 8 -name "node_modules" -type d -prune -atime +60 \
+  -not -path "*/Library/*" -not -path "*/\.*" 2>/dev/null)"})
 if (( ${#NM_DIRS[@]} > 0 )); then
   TOTAL=$(du -shc "${NM_DIRS[@]}" 2>/dev/null | tail -1 | awk '{print $1}')
   info "Encontradas ${#NM_DIRS[@]} carpetas node_modules (total: $TOTAL)"
   for d in "${NM_DIRS[@]}"; do
     info "  $d"
-    run "rm -rf \"$d\""
+    run rm -rf "$d"
   done
   ok "node_modules huérfanos borrados"
 else
-  info "No hay node_modules con +60 días sin modificar — omitido"
+  info "No hay node_modules con +60 días sin acceder — omitido"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -215,7 +231,7 @@ section "12. XCODE — datos internos de simuladores (erase all)"
 if command -v xcrun &>/dev/null; then
   SIZE=$(du -sh ~/Library/Developer/CoreSimulator/Devices 2>/dev/null | awk '{print $1}')
   info "xcrun simctl erase all — limpia apps/datos, conserva los dispositivos ($SIZE)"
-  run "xcrun simctl erase all 2>/dev/null" && ok "Datos de simuladores borrados"
+  run xcrun simctl erase all 2>/dev/null && ok "Datos de simuladores borrados"
 else
   info "xcrun no disponible — omitido"
 fi
@@ -229,7 +245,7 @@ if [[ -d ~/.android/avd ]]; then
     SIZE=$(du -shc "${SNAPS[@]}" 2>/dev/null | tail -1 | awk '{print $1}')
     info "Borrando snapshots de ${#SNAPS[@]} AVD(s) ($SIZE)"
     for s in "${SNAPS[@]}"; do
-      run "rm -rf \"$s\""
+      run rm -rf "$s"
     done
     ok "AVD snapshots borrados"
   else
@@ -244,13 +260,13 @@ section "14. YARN / PNPM — limpiar caché"
 # ─────────────────────────────────────────────────────────────────────────────
 if command -v yarn &>/dev/null; then
   info "yarn cache clean"
-  run "yarn cache clean 2>/dev/null" && ok "yarn cache limpiado"
+  run yarn cache clean 2>/dev/null && ok "yarn cache limpiado"
 else
   info "yarn no instalado — omitido"
 fi
 if command -v pnpm &>/dev/null; then
   info "pnpm store prune"
-  run "pnpm store prune 2>/dev/null" && ok "pnpm store podado"
+  run pnpm store prune 2>/dev/null && ok "pnpm store podado"
 else
   info "pnpm no instalado — omitido"
 fi
@@ -262,7 +278,7 @@ SPM_CACHE=~/Library/Caches/org.swift.swiftpm
 if [[ -d "$SPM_CACHE" ]]; then
   SIZE=$(du -sh "$SPM_CACHE" 2>/dev/null | awk '{print $1}')
   info "Borrando Swift PM cache ($SIZE)"
-  run "rm -rf \"$SPM_CACHE\"" && ok "Swift PM cache borrado"
+  run rm -rf "$SPM_CACHE" && ok "Swift PM cache borrado"
 else
   info "Swift PM cache no encontrado — omitido"
 fi
@@ -275,7 +291,7 @@ if [[ -d "$DIAG_DIR" ]]; then
   COUNT=$(find "$DIAG_DIR" \( -name "*.crash" -o -name "*.ips" \) -mtime +30 2>/dev/null | wc -l | tr -d ' ')
   if (( COUNT > 0 )); then
     info "Borrando $COUNT crash reports con +30 días"
-    run "find \"$DIAG_DIR\" \( -name '*.crash' -o -name '*.ips' \) -mtime +30 -delete 2>/dev/null"
+    run_sh "find \"$DIAG_DIR\" \\( -name '*.crash' -o -name '*.ips' \\) -mtime +30 -delete 2>/dev/null"
     ok "Crash reports viejos borrados"
   else
     info "No hay crash reports con +30 días — omitido"
@@ -294,7 +310,7 @@ if (( ${#GIT_ROOTS[@]} > 0 )); then
   info "Ejecutando git gc en ${#GIT_ROOTS[@]} repositorios"
   for repo in "${GIT_ROOTS[@]}"; do
     info "  $repo"
-    run "git -C \"$repo\" gc --prune=now --quiet 2>/dev/null"
+    run git -C "$repo" gc --prune=now --quiet 2>/dev/null
   done
   ok "git gc completado"
 else
@@ -305,8 +321,10 @@ fi
 section "18. DOCKER — imágenes y contenedores no usados"
 # ─────────────────────────────────────────────────────────────────────────────
 if command -v docker &>/dev/null && timeout 15 docker info &>/dev/null 2>&1; then
-  info "docker system prune -a --volumes -f"
-  run "docker system prune -a --volumes -f 2>/dev/null" && ok "Docker limpiado"
+  # Sin -a ni --volumes: solo elimina imágenes huérfanas (dangling) y contenedores parados,
+  # sin borrar imágenes reutilizables ni volúmenes con datos de compose stacks
+  info "docker system prune -f"
+  run docker system prune -f 2>/dev/null && ok "Docker limpiado"
 else
   info "Docker no disponible — omitido"
 fi
