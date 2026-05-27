@@ -1,5 +1,7 @@
 # clean.sh — macOS disk space cleanup
 
+[![ShellCheck](https://github.com/milyzc/clean-mac/actions/workflows/shellcheck.yml/badge.svg)](https://github.com/milyzc/clean-mac/actions/workflows/shellcheck.yml)
+
 Script for cleaning up development environments (iOS + Android) with Node.js, Xcode and Android Studio.
 
 ## Install & run
