@@ -1,4 +1,4 @@
-# clean.sh — macOS disk space cleanup
+# clean.sh — macOS disk space cleanup in developers mac
 
 [![Lint](https://github.com/milyzc/clean-mac/actions/workflows/shellcheck.yml/badge.svg)](https://github.com/milyzc/clean-mac/actions/workflows/shellcheck.yml)
 
